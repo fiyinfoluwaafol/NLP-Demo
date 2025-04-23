@@ -1,35 +1,50 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Eye } from "lucide-react"
-
-// Mock data
-const initialReceipts = [
-  { id: 1, vendor: "Grocery Store", date: "2025-04-15", total: 24.99, items: 3 },
-  { id: 2, vendor: "Restaurant", date: "2025-04-14", total: 45.5, items: 2 },
-  { id: 3, vendor: "Gas Station", date: "2025-04-13", total: 35.75, items: 1 },
-  { id: 4, vendor: "Pharmacy", date: "2025-04-10", total: 12.99, items: 2 },
-  { id: 5, vendor: "Coffee Shop", date: "2025-04-08", total: 8.75, items: 3 },
-  { id: 6, vendor: "Electronics Store", date: "2025-04-05", total: 129.99, items: 1 },
-  { id: 7, vendor: "Bookstore", date: "2025-04-01", total: 42.5, items: 4 },
-  { id: 8, vendor: "Hardware Store", date: "2025-03-28", total: 67.25, items: 5 },
-]
+import { getReceipts } from "@/lib/mockData"
+import LoadingSpinner from "@/components/loading-spinner"
+import { toast } from "@/hooks/use-toast"
 
 type Receipt = {
-  id: number
+  id: string
   vendor: string
   date: string
   total: number
-  items: number
+  items: Array<{ id: string; description: string; amount: number }>
 }
 
 export default function HistoryGrid() {
-  const [receipts] = useState<Receipt[]>(initialReceipts)
+  const [receipts, setReceipts] = useState<Receipt[]>([])
+  const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 8
+
+  useEffect(() => {
+    async function loadReceipts() {
+      try {
+        const data = await getReceipts()
+        setReceipts(data as unknown as Receipt[])
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to load receipt history.",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadReceipts()
+  }, [])
+
+  if (loading) {
+    return <LoadingSpinner fullScreen />
+  }
 
   const totalPages = Math.ceil(receipts.length / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
@@ -48,7 +63,7 @@ export default function HistoryGrid() {
                 </div>
                 <div className="text-right">
                   <p className="font-medium">${receipt.total.toFixed(2)}</p>
-                  <p className="text-sm text-gray-500">{receipt.items} items</p>
+                  <p className="text-sm text-gray-500">{receipt.items.length} items</p>
                 </div>
               </div>
             </CardContent>
@@ -59,7 +74,7 @@ export default function HistoryGrid() {
                 className="text-[#2DD4BF] hover:text-[#2DD4BF]/90 hover:bg-[#2DD4BF]/10"
                 asChild
               >
-                <Link href={`/history/${receipt.id}`}>
+                <Link href={`/review/${receipt.id}`}>
                   <Eye className="h-4 w-4 mr-1" />
                   View
                 </Link>

@@ -1,31 +1,22 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { toast } from "@/hooks/use-toast"
+import { getReceipt, members, allocateItems } from "@/lib/mockData"
+import LoadingSpinner from "@/components/loading-spinner"
 
-// Mock data
-const initialItems = [
-  { id: "item-1", name: "Milk", amount: 4.99, checked: false, assignedTo: [] },
-  { id: "item-2", name: "Bread", amount: 3.49, checked: false, assignedTo: [] },
-  { id: "item-3", name: "Eggs", amount: 5.99, checked: false, assignedTo: [] },
-  { id: "item-4", name: "Dinner", amount: 35.5, checked: false, assignedTo: [] },
-  { id: "item-5", name: "Drinks", amount: 10.0, checked: false, assignedTo: [] },
-]
-
-const members = [
-  { id: "user-1", name: "Alex", avatar: "/placeholder.svg?height=40&width=40" },
-  { id: "user-2", name: "Jamie", avatar: "/placeholder.svg?height=40&width=40" },
-  { id: "user-3", name: "Taylor", avatar: "/placeholder.svg?height=40&width=40" },
-  { id: "user-4", name: "Jordan", avatar: "/placeholder.svg?height=40&width=40" },
-]
+interface AllocateItemsProps {
+  receiptId: string
+}
 
 type Item = {
   id: string
-  name: string
+  description: string
   amount: number
   checked: boolean
   assignedTo: string[]
@@ -34,13 +25,58 @@ type Item = {
 type Member = {
   id: string
   name: string
-  avatar: string
+  avatarUrl: string
 }
 
-export default function AllocateItems() {
-  const [items, setItems] = useState<Item[]>(initialItems)
+type Receipt = {
+  id: string
+  vendor: string
+  date: string
+  total: number
+  items: Array<{id: string, description: string, amount: number}>
+  allocations: Record<string, string[]>
+}
+
+export default function AllocateItems({ receiptId }: AllocateItemsProps) {
+  const router = useRouter()
+  const [loading, setLoading] = useState(true)
+  const [items, setItems] = useState<Item[]>([])
   const [selectedItems, setSelectedItems] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [receipt, setReceipt] = useState<Receipt | null>(null)
+
+  useEffect(() => {
+    async function loadReceipt() {
+      try {
+        const data: any = await getReceipt(receiptId)
+        setReceipt(data as unknown as Receipt)
+        
+        // Transform receipt items to include UI-specific fields
+        const transformedItems = data.items.map((item: any) => {
+          const itemId = item.id as string;
+          return {
+            id: itemId,
+            description: item.description,
+            amount: item.amount,
+            checked: false,
+            assignedTo: data.allocations && itemId in data.allocations ? data.allocations[itemId] : []
+          };
+        });
+        
+        setItems(transformedItems)
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to load receipt details.",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadReceipt()
+  }, [receiptId])
 
   const handleCheckItem = (itemId: string, checked: boolean) => {
     setItems(items.map((item) => (item.id === itemId ? { ...item, checked } : item)))
@@ -90,12 +126,21 @@ export default function AllocateItems() {
   }
 
   const handleSubmit = async () => {
+    if (!receipt) return
+    
     setIsLoading(true)
 
     try {
-      // TODO: fetch('/api/allocate', { method: 'POST', body: JSON.stringify(items) })
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      // Prepare allocations object from items
+      const allocationsData: Record<string, string[]> = {}
+      items.forEach(item => {
+        if (item.assignedTo.length > 0) {
+          allocationsData[item.id] = item.assignedTo
+        }
+      })
+      
+      // Save allocations
+      await allocateItems(receipt.id, allocationsData)
 
       toast({
         title: "Allocation saved",
@@ -103,7 +148,7 @@ export default function AllocateItems() {
       })
 
       // Redirect to history page
-      window.location.href = "/history"
+      router.push("/history")
     } catch (error) {
       toast({
         title: "Error",
@@ -113,6 +158,10 @@ export default function AllocateItems() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (loading) {
+    return <LoadingSpinner fullScreen />
   }
 
   const hasAssignments = items.some((item) => item.assignedTo.length > 0)
@@ -143,7 +192,7 @@ export default function AllocateItems() {
                             onCheckedChange={(checked) => handleCheckItem(item.id, checked as boolean)}
                           />
                           <label htmlFor={`item-${item.id}`} className="text-sm font-medium cursor-pointer">
-                            {item.name}
+                            {item.description}
                           </label>
                         </div>
                         <div className="flex items-center">
@@ -154,7 +203,7 @@ export default function AllocateItems() {
                                 const member = members.find((m) => m.id === memberId)
                                 return (
                                   <Avatar key={memberId} className="h-6 w-6 border-2 border-white">
-                                    <AvatarImage src={member?.avatar || "/placeholder.svg"} alt={member?.name} />
+                                    <AvatarImage src={member?.avatarUrl || "/placeholder.svg"} alt={member?.name} />
                                     <AvatarFallback className="text-xs">{member?.name.charAt(0)}</AvatarFallback>
                                   </Avatar>
                                 )
@@ -202,7 +251,7 @@ export default function AllocateItems() {
                   >
                     <div className="flex items-center space-x-3">
                       <Avatar>
-                        <AvatarImage src={member.avatar || "/placeholder.svg"} alt={member.name} />
+                        <AvatarImage src={member.avatarUrl || "/placeholder.svg"} alt={member.name} />
                         <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
                       </Avatar>
                       <div>

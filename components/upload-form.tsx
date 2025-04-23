@@ -3,13 +3,17 @@
 import type React from "react"
 
 import { useState, useRef } from "react"
+import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { Upload, FileUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast } from "@/hooks/use-toast"
+import { uploadReceipt } from "@/lib/mockData"
+import LoadingSpinner from "@/components/loading-spinner"
 
 export default function UploadForm() {
+  const router = useRouter()
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -54,17 +58,16 @@ export default function UploadForm() {
     setIsLoading(true)
 
     try {
-      // TODO: fetch('/api/upload', { method: 'POST', body: formData })
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      // Call the mock uploadReceipt function
+      const newReceipt = await uploadReceipt(file)
 
       toast({
         title: "Receipt uploaded",
         description: "Your receipt has been processed successfully.",
       })
 
-      // Redirect to review page
-      window.location.href = "/review"
+      // Redirect to review page with the new receipt ID
+      router.push(`/review/${newReceipt.id}`)
     } catch (error) {
       toast({
         title: "Upload failed",
@@ -132,7 +135,7 @@ export default function UploadForm() {
           >
             {isLoading ? (
               <>
-                <FileUp className="mr-2 h-4 w-4 animate-bounce" />
+                <LoadingSpinner className="mr-2" /> 
                 Processing...
               </>
             ) : (

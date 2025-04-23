@@ -2,92 +2,291 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Check, X, Edit2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
+import { getReceipt, updateReceipt } from "@/lib/mockData"
+import LoadingSpinner from "@/components/loading-spinner"
 
-// Mock data
-const initialItems = [
-  { id: 1, vendor: "Grocery Store", date: "2025-04-15", amount: 24.99, items: "Milk, Bread, Eggs" },
-  { id: 2, vendor: "Restaurant", date: "2025-04-14", amount: 45.5, items: "Dinner, Drinks" },
-  { id: 3, vendor: "Gas Station", date: "2025-04-13", amount: 35.75, items: "Fuel" },
-]
-
-type Item = {
-  id: number
-  vendor: string
-  date: string
-  amount: number
-  items: string
+interface ReviewTableProps {
+  receiptId: string
 }
 
-export default function ReviewTable() {
-  const [items, setItems] = useState<Item[]>(initialItems)
-  const [editingCell, setEditingCell] = useState<{ id: number; field: keyof Item } | null>(null)
+type ReceiptItem = {
+  id: string
+  description: string
+  amount: number
+}
+
+interface Receipt {
+  id: string
+  vendor: string
+  date: string
+  total: number
+  items: ReceiptItem[]
+  allocations: Record<string, string[]>
+}
+
+export default function ReviewTable({ receiptId }: ReviewTableProps) {
+  const router = useRouter()
+  const [receipt, setReceipt] = useState<Receipt | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [editingCell, setEditingCell] = useState<{ itemId: string; field: keyof ReceiptItem } | null>(null)
+  const [editingReceipt, setEditingReceipt] = useState<{ field: keyof Receipt } | null>(null)
   const [editValue, setEditValue] = useState<string>("")
 
-  const startEditing = (id: number, field: keyof Item, value: string | number) => {
-    setEditingCell({ id, field })
+  useEffect(() => {
+    async function loadReceipt() {
+      try {
+        const data = await getReceipt(receiptId)
+        // Using unknown first to avoid TypeScript error
+        setReceipt(data as unknown as Receipt)
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to load receipt details.",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadReceipt()
+  }, [receiptId])
+
+  const startEditingItem = (itemId: string, field: keyof ReceiptItem, value: string | number) => {
+    setEditingCell({ itemId, field })
+    setEditValue(String(value))
+  }
+
+  const startEditingReceipt = (field: keyof Receipt, value: string | number) => {
+    setEditingReceipt({ field })
     setEditValue(String(value))
   }
 
   const cancelEditing = () => {
     setEditingCell(null)
+    setEditingReceipt(null)
   }
 
-  const saveEdit = (id: number, field: keyof Item) => {
-    setItems(
-      items.map((item) => {
-        if (item.id === id) {
-          return {
-            ...item,
-            [field]: field === "amount" ? Number.parseFloat(editValue) : editValue,
-          }
+  const saveItemEdit = async (itemId: string, field: keyof ReceiptItem) => {
+    if (!receipt) return
+
+    // Find the item and update it
+    const updatedItems = receipt.items.map((item) => {
+      if (item.id === itemId) {
+        return {
+          ...item,
+          [field]: field === "amount" ? Number.parseFloat(editValue) : editValue,
         }
-        return item
-      }),
-    )
-
-    setEditingCell(null)
-
-    toast({
-      title: "Changes saved",
-      description: "Your changes have been saved successfully.",
+      }
+      return item
     })
+
+    // Recalculate total if amount was changed
+    let newTotal = receipt.total
+    if (field === "amount") {
+      const oldAmount = receipt.items.find(item => item.id === itemId)?.amount || 0
+      const newAmount = Number.parseFloat(editValue)
+      newTotal = receipt.total - oldAmount + newAmount
+    }
+
+    try {
+      // Update the receipt
+      const updatedReceipt = await updateReceipt(receipt.id, { 
+        items: updatedItems,
+        total: newTotal
+      })
+      
+      // Using unknown first to avoid TypeScript error
+      setReceipt(updatedReceipt as unknown as Receipt)
+      setEditingCell(null)
+
+      toast({
+        title: "Changes saved",
+        description: "Your changes have been saved successfully.",
+      })
+    } catch (error) {
+      toast({
+        title: "Update failed",
+        description: "Failed to update the receipt.",
+        variant: "destructive",
+      })
+    }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent, id: number, field: keyof Item) => {
+  const saveReceiptEdit = async (field: keyof Receipt) => {
+    if (!receipt) return
+
+    const updatedValue = field === "total" ? Number.parseFloat(editValue) : editValue
+
+    try {
+      // Update the receipt
+      const updatedReceipt = await updateReceipt(receipt.id, { 
+        [field]: updatedValue
+      })
+      
+      // Using unknown first to avoid TypeScript error
+      setReceipt(updatedReceipt as unknown as Receipt)
+      setEditingReceipt(null)
+
+      toast({
+        title: "Changes saved",
+        description: "Your changes have been saved successfully.",
+      })
+    } catch (error) {
+      toast({
+        title: "Update failed",
+        description: "Failed to update the receipt.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent, callback: () => void) => {
     if (e.key === "Enter") {
-      saveEdit(id, field)
+      callback()
     } else if (e.key === "Escape") {
       cancelEditing()
     }
   }
 
+  if (loading) {
+    return <LoadingSpinner fullScreen />
+  }
+
+  if (!receipt) {
+    return <div className="p-8 text-center">Receipt not found</div>
+  }
+
   return (
     <div className="rounded-md border">
+      <div className="p-4 border-b grid grid-cols-3 gap-4">
+        <div onClick={() => startEditingReceipt("vendor", receipt.vendor)} className="cursor-pointer">
+          {editingReceipt?.field === "vendor" ? (
+            <div className="flex items-center">
+              <Input
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={(e) => handleKeyDown(e, () => saveReceiptEdit("vendor"))}
+                autoFocus
+                className="h-8"
+              />
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 ml-1"
+                onClick={() => saveReceiptEdit("vendor")}
+              >
+                <Check className="h-4 w-4 text-green-500" />
+              </Button>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={cancelEditing}>
+                <X className="h-4 w-4 text-red-500" />
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center group">
+              <div>
+                <p className="text-sm text-gray-500">Vendor</p>
+                <p className="font-medium">{receipt.vendor}</p>
+              </div>
+              <Edit2 className="h-3 w-3 ml-2 opacity-0 group-hover:opacity-100 text-gray-400" />
+            </div>
+          )}
+        </div>
+        
+        <div onClick={() => startEditingReceipt("date", receipt.date)} className="cursor-pointer">
+          {editingReceipt?.field === "date" ? (
+            <div className="flex items-center">
+              <Input
+                type="date"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={(e) => handleKeyDown(e, () => saveReceiptEdit("date"))}
+                autoFocus
+                className="h-8"
+              />
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 ml-1"
+                onClick={() => saveReceiptEdit("date")}
+              >
+                <Check className="h-4 w-4 text-green-500" />
+              </Button>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={cancelEditing}>
+                <X className="h-4 w-4 text-red-500" />
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center group">
+              <div>
+                <p className="text-sm text-gray-500">Date</p>
+                <p className="font-medium">{new Date(receipt.date).toLocaleDateString()}</p>
+              </div>
+              <Edit2 className="h-3 w-3 ml-2 opacity-0 group-hover:opacity-100 text-gray-400" />
+            </div>
+          )}
+        </div>
+        
+        <div onClick={() => startEditingReceipt("total", receipt.total)} className="cursor-pointer">
+          {editingReceipt?.field === "total" ? (
+            <div className="flex items-center">
+              <Input
+                type="number"
+                step="0.01"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={(e) => handleKeyDown(e, () => saveReceiptEdit("total"))}
+                autoFocus
+                className="h-8"
+              />
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 ml-1"
+                onClick={() => saveReceiptEdit("total")}
+              >
+                <Check className="h-4 w-4 text-green-500" />
+              </Button>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={cancelEditing}>
+                <X className="h-4 w-4 text-red-500" />
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center group">
+              <div>
+                <p className="text-sm text-gray-500">Total</p>
+                <p className="font-medium">${receipt.total.toFixed(2)}</p>
+              </div>
+              <Edit2 className="h-3 w-3 ml-2 opacity-0 group-hover:opacity-100 text-gray-400" />
+            </div>
+          )}
+        </div>
+      </div>
+
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="uppercase text-xs font-semibold">Vendor</TableHead>
-            <TableHead className="uppercase text-xs font-semibold">Date</TableHead>
+            <TableHead className="uppercase text-xs font-semibold">Item</TableHead>
             <TableHead className="uppercase text-xs font-semibold">Amount</TableHead>
-            <TableHead className="uppercase text-xs font-semibold">Items</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((item) => (
+          {receipt.items.map((item) => (
             <TableRow key={item.id}>
-              <TableCell onClick={() => startEditing(item.id, "vendor", item.vendor)} className="cursor-pointer">
-                {editingCell?.id === item.id && editingCell?.field === "vendor" ? (
+              <TableCell onClick={() => startEditingItem(item.id, "description", item.description)} className="cursor-pointer">
+                {editingCell?.itemId === item.id && editingCell?.field === "description" ? (
                   <div className="flex items-center">
                     <Input
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, item.id, "vendor")}
+                      onKeyDown={(e) => handleKeyDown(e, () => saveItemEdit(item.id, "description"))}
                       autoFocus
                       className="h-8"
                     />
@@ -95,7 +294,7 @@ export default function ReviewTable() {
                       size="icon"
                       variant="ghost"
                       className="h-8 w-8 ml-1"
-                      onClick={() => saveEdit(item.id, "vendor")}
+                      onClick={() => saveItemEdit(item.id, "description")}
                     >
                       <Check className="h-4 w-4 text-green-500" />
                     </Button>
@@ -105,50 +304,20 @@ export default function ReviewTable() {
                   </div>
                 ) : (
                   <div className="flex items-center group">
-                    <span>{item.vendor}</span>
+                    <span>{item.description}</span>
                     <Edit2 className="h-3 w-3 ml-2 opacity-0 group-hover:opacity-100 text-gray-400" />
                   </div>
                 )}
               </TableCell>
-              <TableCell onClick={() => startEditing(item.id, "date", item.date)} className="cursor-pointer">
-                {editingCell?.id === item.id && editingCell?.field === "date" ? (
-                  <div className="flex items-center">
-                    <Input
-                      type="date"
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, item.id, "date")}
-                      autoFocus
-                      className="h-8"
-                    />
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 ml-1"
-                      onClick={() => saveEdit(item.id, "date")}
-                    >
-                      <Check className="h-4 w-4 text-green-500" />
-                    </Button>
-                    <Button size="icon" variant="ghost" className="h-8 w-8" onClick={cancelEditing}>
-                      <X className="h-4 w-4 text-red-500" />
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center group">
-                    <span>{new Date(item.date).toLocaleDateString()}</span>
-                    <Edit2 className="h-3 w-3 ml-2 opacity-0 group-hover:opacity-100 text-gray-400" />
-                  </div>
-                )}
-              </TableCell>
-              <TableCell onClick={() => startEditing(item.id, "amount", item.amount)} className="cursor-pointer">
-                {editingCell?.id === item.id && editingCell?.field === "amount" ? (
+              <TableCell onClick={() => startEditingItem(item.id, "amount", item.amount)} className="cursor-pointer">
+                {editingCell?.itemId === item.id && editingCell?.field === "amount" ? (
                   <div className="flex items-center">
                     <Input
                       type="number"
                       step="0.01"
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, item.id, "amount")}
+                      onKeyDown={(e) => handleKeyDown(e, () => saveItemEdit(item.id, "amount"))}
                       autoFocus
                       className="h-8"
                     />
@@ -156,7 +325,7 @@ export default function ReviewTable() {
                       size="icon"
                       variant="ghost"
                       className="h-8 w-8 ml-1"
-                      onClick={() => saveEdit(item.id, "amount")}
+                      onClick={() => saveItemEdit(item.id, "amount")}
                     >
                       <Check className="h-4 w-4 text-green-500" />
                     </Button>
@@ -171,35 +340,6 @@ export default function ReviewTable() {
                   </div>
                 )}
               </TableCell>
-              <TableCell onClick={() => startEditing(item.id, "items", item.items)} className="cursor-pointer">
-                {editingCell?.id === item.id && editingCell?.field === "items" ? (
-                  <div className="flex items-center">
-                    <Input
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, item.id, "items")}
-                      autoFocus
-                      className="h-8"
-                    />
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 ml-1"
-                      onClick={() => saveEdit(item.id, "items")}
-                    >
-                      <Check className="h-4 w-4 text-green-500" />
-                    </Button>
-                    <Button size="icon" variant="ghost" className="h-8 w-8" onClick={cancelEditing}>
-                      <X className="h-4 w-4 text-red-500" />
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center group">
-                    <span>{item.items}</span>
-                    <Edit2 className="h-3 w-3 ml-2 opacity-0 group-hover:opacity-100 text-gray-400" />
-                  </div>
-                )}
-              </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -208,12 +348,7 @@ export default function ReviewTable() {
         <Button
           className="bg-[#2DD4BF] hover:bg-[#2DD4BF]/90"
           onClick={() => {
-            // TODO: fetch('/api/review/save', { method: 'POST', body: JSON.stringify(items) })
-            toast({
-              title: "Review completed",
-              description: "Moving to allocation page.",
-            })
-            window.location.href = "/allocate"
+            router.push(`/allocate/${receipt.id}`)
           }}
         >
           Continue to Allocation
