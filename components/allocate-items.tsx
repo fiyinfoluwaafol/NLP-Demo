@@ -147,8 +147,8 @@ export default function AllocateItems({ receiptId }: AllocateItemsProps) {
         description: "Your expense allocation has been saved successfully.",
       })
 
-      // Redirect to history page
-      router.push("/history")
+      // Redirect to summary page
+      router.push(`/summary/${receipt.id}`)
     } catch (error) {
       toast({
         title: "Error",

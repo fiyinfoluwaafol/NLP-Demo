@@ -74,9 +74,9 @@ export default function HistoryGrid() {
                 className="text-[#2DD4BF] hover:text-[#2DD4BF]/90 hover:bg-[#2DD4BF]/10"
                 asChild
               >
-                <Link href={`/review/${receipt.id}`}>
+                <Link href={`/summary/${receipt.id}`}>
                   <Eye className="h-4 w-4 mr-1" />
-                  View
+                  View Summary
                 </Link>
               </Button>
             </CardFooter>
