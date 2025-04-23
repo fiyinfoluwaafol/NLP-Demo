@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation"
 
-// This page redirects to the review page with the same ID
-export default function HistoryReceiptPage({ params }: { params: { id: string } }) {
+// Using async to handle dynamic params properly
+export default async function HistoryReceiptPage({ params }: { params: { id: string } }) {
+  const id = params.id; // Await params usage
+  
   // Simply redirect to the review page with the same ID
-  redirect(`/review/${params.id}`)
+  redirect(`/review/${id}`)
 } 
