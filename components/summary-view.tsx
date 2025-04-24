@@ -9,6 +9,7 @@ import { getReceipt, members } from "@/lib/mockData"
 import LoadingSpinner from "@/components/loading-spinner"
 import { toast } from "@/hooks/use-toast"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import PersonDetailModal from "@/components/person-detail-modal"
 
 type ReceiptItem = {
   id: string
@@ -32,6 +33,11 @@ interface MemberShare {
   amountDue: number
 }
 
+interface MemberItem extends ReceiptItem {
+  amountShare: number
+  totalParticipants: number
+}
+
 interface SummaryViewProps {
   receiptId: string
 }
@@ -41,6 +47,11 @@ export default function SummaryView({ receiptId }: SummaryViewProps) {
   const [receipt, setReceipt] = useState<Receipt | null>(null)
   const [memberShares, setMemberShares] = useState<MemberShare[]>([])
   const [loading, setLoading] = useState(true)
+  
+  // Modal state
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [selectedMember, setSelectedMember] = useState<MemberShare | null>(null)
+  const [memberItems, setMemberItems] = useState<MemberItem[]>([])
 
   useEffect(() => {
     async function loadReceipt() {
@@ -94,6 +105,38 @@ export default function SummaryView({ receiptId }: SummaryViewProps) {
     setMemberShares(shares)
   }
 
+  // Function to handle member card click
+  const handleMemberClick = (member: MemberShare) => {
+    if (!receipt) return;
+    
+    // Get items assigned to this member
+    const items: MemberItem[] = [];
+    
+    receipt.items.forEach(item => {
+      const allocatedMembers = receipt.allocations[item.id] || [];
+      
+      // If this member is allocated to this item
+      if (allocatedMembers.includes(member.id)) {
+        // Calculate the share for this member
+        const amountShare = item.amount / allocatedMembers.length;
+        
+        items.push({
+          ...item,
+          amountShare,
+          totalParticipants: allocatedMembers.length
+        });
+      }
+    });
+    
+    // Sort items by amount (highest first)
+    items.sort((a, b) => b.amountShare - a.amountShare);
+    
+    // Set selected member and their items
+    setSelectedMember(member);
+    setMemberItems(items);
+    setIsModalOpen(true);
+  };
+
   if (loading) {
     return <LoadingSpinner fullScreen />
   }
@@ -133,27 +176,41 @@ export default function SummaryView({ receiptId }: SummaryViewProps) {
 
       <div className="grid md:grid-cols-2 gap-4">
         {memberShares.map(member => (
-          <Card key={member.id} className={`${member.amountDue > 0 ? 'border-[#2DD4BF]' : ''}`}>
-            <CardContent className="p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Avatar>
-                  <AvatarImage src={member.avatarUrl} alt={member.name} />
-                  <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
-                </Avatar>
-                <div>
-                  <div className="font-medium">{member.name}</div>
-                  <div className="text-sm text-gray-500">
-                    {member.amountDue > 0 ? 'Owes' : 'Not participating'}
+          <button 
+            key={member.id} 
+            className="text-left w-full" 
+            onClick={() => handleMemberClick(member)}
+          >
+            <Card className={`${member.amountDue > 0 ? 'border-[#2DD4BF]' : ''} transition-all hover:shadow-md`}>
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Avatar>
+                    <AvatarImage src={member.avatarUrl} alt={member.name} />
+                    <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <div className="font-medium">{member.name}</div>
+                    <div className="text-sm text-gray-500">
+                      {member.amountDue > 0 ? 'Owes' : 'Not participating'}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className={`text-xl font-semibold ${member.amountDue > 0 ? 'text-[#2DD4BF]' : 'text-gray-400'}`}>
-                ${member.amountDue.toFixed(2)}
-              </div>
-            </CardContent>
-          </Card>
+                <div className={`text-xl font-semibold ${member.amountDue > 0 ? 'text-[#2DD4BF]' : 'text-gray-400'}`}>
+                  ${member.amountDue.toFixed(2)}
+                </div>
+              </CardContent>
+            </Card>
+          </button>
         ))}
       </div>
+      
+      {/* Person Detail Modal */}
+      <PersonDetailModal
+        open={isModalOpen}
+        onOpenChange={setIsModalOpen}
+        member={selectedMember}
+        memberItems={memberItems}
+      />
     </div>
   )
 } 
